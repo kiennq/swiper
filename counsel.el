@@ -6953,6 +6953,7 @@ Additional actions:\\<ivy-minibuffer-map>
 
 ;;** `counsel-search'
 (declare-function request "ext:request")
+(declare-function json-read "ext:json")
 
 (defcustom counsel-search-engine 'ddg
   "The search engine choice in `counsel-search-engines-alist'."
@@ -6978,6 +6979,12 @@ Additional actions:\\<ivy-minibuffer-map>
 (defun counsel--search-request-data-ddg (data)
   (mapcar #'cdar data))
 
+(defalias 'counsel--json-read
+  ;; Available with --with-json flag
+  (if (fboundp 'json-parse-buffer)
+      (apply-partially #'json-parse-buffer :object-type 'alist)
+    (progn (require 'json) #'json-read)))
+
 (defun counsel-search-function (input)
   "Create a request to a search engine with INPUT.
 Return 0 tells `ivy--exhibit' not to update the minibuffer.
@@ -6985,13 +6992,14 @@ We update it in the callback with `ivy-update-candidates'."
   (or
    (ivy-more-chars)
    (let ((engine (cdr (assoc counsel-search-engine counsel-search-engines-alist))))
+     (require 'request)
      (request
       (nth 0 engine)
       :type "GET"
       :params (list
                (cons "client" "firefox")
                (cons "q" input))
-      :parser 'json-read
+      :parser #'counsel--json-read
       :success (cl-function
                 (lambda (&key data &allow-other-keys)
                   (ivy-update-candidates
@@ -7005,13 +7013,99 @@ We update it in the callback with `ivy-update-candidates'."
     (nth 2 (assoc counsel-search-engine counsel-search-engines-alist))
     (url-hexify-string x))))
 
+(defun counsel-search--stackoverflow-action (query)
+  "Search and display result for QUERY in StackOverflow."
+  (let* ((question-ids
+          (with-current-buffer (url-retrieve-synchronously
+                                (concat "https://google.com/search?ie=utf-8&oe=utf-8&hl=en&as_qdr=all&q="
+                                        (url-hexify-string (concat query " site:stackoverflow.com"))))
+            (let (ids)
+              (while (re-search-forward "https://stackoverflow.com/questions/\\([0-9]+\\)" nil t)
+                (push (match-string-no-properties 1) ids))
+              (setq ids (reverse ids))
+              (if (> (length ids) 5) (cl-subseq ids 0 5) ids))))
+         (url_template (format "https://api.stackexchange.com/2.2/questions/%s%%s?site=stackoverflow.com"
+                               (string-join question-ids ";")))
+         (questions (with-current-buffer (url-retrieve-synchronously
+                                          (format url_template ""))
+                      (goto-char (point-min))
+                      (search-forward "\n\n")
+                      (append (assoc-default 'items (counsel--json-read)) nil)))
+         (answers (with-current-buffer (url-retrieve-synchronously
+                                        (concat (format url_template "/answers")
+                                                "&order=desc&sort=activity&filter=withbody"))
+                    (goto-char (point-min))
+                    (search-forward "\n\n")
+                    (sort (append (assoc-default 'items (counsel--json-read)) nil)
+                          (lambda (x y)
+                            (> (assoc-default 'score x)
+                               (assoc-default 'score y)))))))
+    (switch-to-buffer "*stackexchange*")
+    (let ((inhibit-read-only t))
+      (erase-buffer)
+      (dolist (question_id (mapcar 'string-to-number question-ids))
+        (let ((question (cl-some (lambda (question)
+                                   (if (equal (assoc-default 'question_id question)
+                                              question_id)
+                                       question))
+                                 questions)))
+          (insert "<hr><h2 style='background-color:paleturquoise'>Question: "
+                  (format "<a href='%s'>%s</a>"
+                          (assoc-default 'link question)
+                          (assoc-default 'title question))
+                  "</h2>"
+                  "\n"
+                  (mapconcat
+                   'identity
+                   (let ((rendered (cl-remove-if
+                                    'null
+                                    (mapcar (lambda (answer)
+                                              (if (and (equal question_id
+                                                              (assoc-default 'question_id answer))
+                                                       (>= (assoc-default 'score answer) 0))
+                                                  (concat "<hr><h2 style='background-color:"
+                                                          "#c1ffc1'>Answer - score: "
+                                                          (number-to-string (assoc-default 'score answer))
+                                                          "</h2>"
+                                                          (assoc-default 'body answer))))
+                                            answers))))
+                     (if (> (length rendered) 5)
+                         (append (cl-subseq rendered 0 5)
+                                 (list (format "<br><br><a href='%s'>%s</a>"
+                                               (assoc-default 'link question)
+                                               "More answers...")))
+                       rendered))
+                   "\n"))))
+      (shr-render-region (point-min) (point-max))
+      (goto-char (point-min))
+      (save-excursion
+        (while (search-forward "^M" nil t)
+          (replace-match ""))))
+    (special-mode)))
+
+(defun counsel-search-stackoverflow-action (query)
+  "Search and display result for QUERY in StackOverflow."
+  (if (fboundp #'make-thread)
+      (make-thread (apply-partially #'counsel-search--stackoverflow-action query))
+    (counsel-search--stackoverflow-action query)))
+
+;;;###autoload
 (defun counsel-search ()
   "Ivy interface for dynamically querying a search engine."
   (interactive)
-  (require 'request)
-  (require 'json)
   (ivy-read "search: " #'counsel-search-function
-            :action #'counsel-search-action
+            :action `(1
+                      ("o" counsel-search-action "Open in browser")
+                      ("s" counsel-search-stackoverflow-action "Open with StackOverflow"))
+            :dynamic-collection t
+            :caller 'counsel-search))
+
+;;;###autoload
+(defun counsel-search-stackoverflow ()
+  "Ivy interface for dynamically querying a search engine."
+  (interactive)
+  (ivy-read "search: " #'counsel-search-function
+            :action #'counsel-search-stackoverflow-action
             :dynamic-collection t
             :caller 'counsel-search))
 
