@@ -3694,11 +3694,11 @@ Return result of last form in BODY if it finished successfully."
          (unless (booleanp ret) ret))
      ,@body))
 
-(defun ivy--re-filter (re candidates &optional mkpred)
+(defun ivy--re-filter (filter candidates &optional mkpred)
   "Like `ivy--re-filter-1' but interruptible by keyboard."
-  (ivy--while-no-input (ivy--re-filter-1 re candidates mkpred)))
+  (ivy--while-no-input (ivy--re-filter-1 filter candidates mkpred)))
 
-(defun ivy--re-filter-1 (re candidates &optional mkpred)
+(defun ivy--re-filter-1 (filter  candidates &optional mkpred)
   "Return all CANDIDATES matching FILTER, or nil on error.
 FILTER is either a string or a list of (REGEXP . BOOLEAN).
 The result includes those CANDIDATES which are matched by each REGEXP
@@ -3719,7 +3719,7 @@ this function's default regexp matching behavior."
                (pred
                 (if mkpred
                     (funcall mkpred re)
-                  (lambda (x) (string-match-p re x)))))
+                  (lambda (x) (ignore-errors (string-match-p re x))))))
           (setq candidates
                 (cl-delete nil candidates
                            (if (cdr matcher) :if-not :if)
