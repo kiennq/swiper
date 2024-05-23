@@ -3659,7 +3659,7 @@ Otherwise, the car must not match."
                (pred
                 (if mkpred
                     (funcall mkpred re-str)
-                  (lambda (x) (string-match-p re-str x)))))
+                  (lambda (x) (ignore-errors (string-match-p re-str x))))))
           (setq candidates
                 (cl-delete nil candidates
                            (if (cdr re) :if-not :if)
