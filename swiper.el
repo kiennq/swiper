@@ -531,9 +531,7 @@ such as `scroll-conservatively' are set to a high value.")
                     (point))
                 (line-end-position))))
 
-    (concat
-     " "
-     (buffer-substring beg end))))
+    (concat " " (buffer-substring-no-properties beg end))))
 
 (defvar swiper-use-visual-line-p
   (lambda (n-lines)
@@ -578,7 +576,6 @@ numbers; replaces calculating the width from buffer line count."
           (while (< (point) (point-max))
             (when (swiper-match-usable-p)
               (let ((str (swiper--line)))
-                (setq str (ivy-cleanup-string str))
                 (let ((line-number-str
                        (format swiper--format-spec line-number)))
                   (if swiper-include-line-number-in-search
