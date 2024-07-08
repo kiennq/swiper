@@ -4328,10 +4328,7 @@ CANDS is a list of candidates that :display-transformer can turn into strings."
     (ivy-set-index (max (1- ivy--length) 0)))
   (if (null cands)
       (setf (ivy-state-current ivy-last) "")
-    (let ((cur (nth ivy--index cands)))
-      (setf (ivy-state-current ivy-last) (if (stringp cur)
-                                             (copy-sequence cur)
-                                           cur)))
+    (setf (ivy-state-current ivy-last) (nth ivy--index cands))
     (let* ((bnd (ivy--minibuffer-index-bounds
                  ivy--index ivy--length ivy-height))
            (wnd-cands (cl-subseq cands (car bnd) (cadr bnd)))
@@ -4374,7 +4371,7 @@ CANDS is a list of candidates that :display-transformer can turn into strings."
                            (mapcar fmt (if affix (funcall affix wnd-cands)
                                          wnd-cands))
                          (error wnd-cands)))))
-    (concat "\n" (ivy--remove-props str 'read-only))))
+    (concat "\n" (ivy--remove-props str 'read-only 'invisible))))
 
 (defvar recentf-list)
 (defvar bookmark-alist)
