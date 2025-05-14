@@ -362,6 +362,7 @@ Remove DEF from `counsel-M-x' list."
     (ivy-define-key map (kbd "C-M-n") #'ivy-next-line-and-call)
     (ivy-define-key map (kbd "C-M-p") #'ivy-previous-line-and-call)
     (ivy-define-key map (kbd "M-a") #'ivy-toggle-marks)
+    (ivy-define-key map (kbd "M-m") #'ivy-toggle-mark)
     (ivy-define-key map (kbd "M-r") #'ivy-toggle-regexp-quote)
     (ivy-define-key map (kbd "M-j") #'ivy-yank-word)
     (ivy-define-key map (kbd "M-i") #'ivy-insert-current)
@@ -2623,6 +2624,27 @@ behavior."
    prompt collection predicate require-match initial-input
    history (or def "") inherit-input-method))
 
+;;;###autoload
+(defun ivy-completing-read-multiple (prompt collection
+                                            &optional predicate require-match
+                                            initial-input history def inherit-input-method)
+  "A drop-in replacement for `completing-read-multiple'.
+It uses `ivy-mark' to mark the candidates and return a list of them."
+  (let (choices)
+    (ivy-read (concat "[multiple] " prompt) collection
+              :predicate predicate
+              :require-match require-match
+              :initial-input initial-input
+              :history history
+              :def def
+              :action
+              (lambda (i) (setq choices (list (if (consp i) (car i) i))))
+              :multi-action
+              (lambda (m)
+                (dolist (i m)
+                  (push (if (consp i) (car i) i) choices))))
+    (nreverse choices)))
+
 (declare-function mc/all-fake-cursors "ext:multiple-cursors-core")
 
 ;; Kludge: Try to retain original minibuffer completion data.
@@ -2827,7 +2849,9 @@ Minibuffer bindings:
         (when ivy-do-completion-in-region
           (unless (eq completion-in-region-function #'ivy-completion-in-region)
             (setq ivy--old-cirf completion-in-region-function)
-            (setq completion-in-region-function #'ivy-completion-in-region))))
+            (setq completion-in-region-function #'ivy-completion-in-region)))
+        (advice-add 'completing-read-multiple :override #'ivy-completing-read-multiple)
+        )
     (when (eq completing-read-function #'ivy-completing-read)
       (setq completing-read-function (or ivy--old-crf
                                          #'completing-read-default))
@@ -2835,7 +2859,9 @@ Minibuffer bindings:
     (when (eq completion-in-region-function #'ivy-completion-in-region)
       (setq completion-in-region-function (or ivy--old-cirf
                                               #'completion--in-region))
-      (setq ivy--old-cirf nil))))
+      (setq ivy--old-cirf nil))
+    (advice-remove 'completing-read-multiple #'ivy-completing-read-multiple)
+    ))
 
 (defun ivy--preselect-index (preselect candidates)
   "Return the index of PRESELECT in CANDIDATES."
@@ -4280,6 +4306,17 @@ in this case."
               (cl-incf i)))))))
   str)
 
+(defcustom ivy-format-minibuffer-line-function #'ivy--default-format-line
+  "Function that will be used to format the line use in minibuffer.
+Its parameter can be (PREFIX ITEM SUFFIX) or (ITEM SUFFIX)."
+  :type 'function)
+
+(defun ivy--default-format-line (&rest args)
+  "Default value for `ivy-format-minibuffer-line-function'."
+  (pcase (length args)
+    (2 (apply #'format "%-40s\t%s" args))
+    (3 (apply #'format "%s %-40s\t%s" args))))
+
 (defun ivy--format-minibuffer-line (str &optional affix)
   "Format line STR for use in minibuffer.
 AFFIX is either the (PREFIX SUFFIX) cdr returned by
@@ -4298,12 +4335,13 @@ AFFIX is either the (PREFIX SUFFIX) cdr returned by
                    help-echo ivy--help-echo)))
     (add-text-properties 0 (length str) mouse str)
     (cond ((consp affix)
-           (concat (nth 0 affix) str (nth 1 affix)))
+           (apply ivy-format-minibuffer-line-function
+                  `(,(nth 0 affix) ,str ,(nth 1 affix))))
           (affix
            ;; Existing face takes priority.
            (unless (text-property-not-all 0 (length affix) 'face nil affix)
              (setq affix (ivy-append-face affix 'ivy-completions-annotations)))
-           (concat str affix))
+           (apply ivy-format-minibuffer-line-function `(,str ,affix)))
           (str))))
 
 (defun ivy-read-file-transformer (str)
@@ -5516,6 +5554,14 @@ make decisions based on the whole marked list."
   (ivy--exhibit)
   (when (ivy--marked-p)
     (ivy--unmark (ivy-state-current ivy-last))))
+
+(defun ivy-toggle-mark ()
+  "Toggle mark the selected candidate and move to the next one."
+  (interactive)
+  (if (ivy--marked-p)
+      (ivy--unmark (ivy-state-current ivy-last))
+    (ivy--mark (ivy-state-current ivy-last)))
+  (ivy-next-line))
 
 (defun ivy-toggle-marks ()
   "Toggle mark for all narrowed candidates."
