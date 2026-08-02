@@ -1365,6 +1365,12 @@ a buffer visiting a file."
         (should (equal out expected))
         (should (equal match-data-orig (match-data)))))))
 
+(ert-deftest counsel--git-grep-file-and-line ()
+  (should (equal (counsel--git-grep-file-and-line "counsel.el:42:text")
+                 '("counsel.el" . 42)))
+  (should (equal (counsel--git-grep-file-and-line "counsel.el")
+                 '("counsel.el" . 1))))
+
 (ert-deftest counsel--grep-regex ()
   ;; negative lookahead: lines with "ivy", without "-"
   (should
