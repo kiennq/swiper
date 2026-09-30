@@ -1473,6 +1473,12 @@ AUTHOR")))
                    (counsel--grep-regex "ivy"))
                  "(i)[^v\n]*(v)[^y\n]*(y)")))
 
+(ert-deftest counsel--git-grep-file-and-line ()
+  (should (equal (counsel--git-grep-file-and-line "counsel.el:42:text")
+                 '("counsel.el" . 42)))
+  (should (equal (counsel--git-grep-file-and-line "counsel.el")
+                 '("counsel.el" . 1))))
+
 (ert-deftest counsel-find-file-with-dollars ()
   (ivy-test-with-tmpdir default-directory
     (mapc #'ivy-test-empty-file '("foo$" "one" "two" "$"))

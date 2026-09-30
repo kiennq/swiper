@@ -1609,11 +1609,12 @@ This function should set `ivy--old-re'."
   (counsel--git-grep-visit x t))
 
 (defun counsel--git-grep-file-and-line (x)
-  "Extract file name and line number from `counsel-git-grep' line X.
-Return a pair (FILE . LINE) on success; nil otherwise."
-  (and (string-match "\\`\\(.*?\\):\\([0-9]+\\):\\(.*\\)\\'" x)
-       (cons (match-string-no-properties 1 x)
-             (string-to-number (match-string-no-properties 2 x)))))
+  "Extract file name and optional line number from `counsel-git-grep' line X.
+Return a pair (FILE . LINE), defaulting LINE to 1."
+  (if (string-match "\\`\\(.*?\\):\\([0-9]+\\):\\(.*\\)\\'" x)
+      (cons (match-string-no-properties 1 x)
+            (string-to-number (match-string-no-properties 2 x)))
+    (cons (substring-no-properties x) 1)))
 
 (defun counsel--git-grep-visit (cand &optional other-window)
   "Visit `counsel-git-grep' CAND, optionally in OTHER-WINDOW."
