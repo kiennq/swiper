@@ -256,6 +256,7 @@ respectively."
                  (start-file-process-shell-command name buf cmd))))
     (setq counsel--async-time (current-time))
     (setq counsel--async-start counsel--async-time)
+    (process-put proc 'counsel--ivy-state ivy-last)
     (set-process-sentinel proc (or sentinel #'counsel--async-sentinel))
     (set-process-filter proc (or filter #'counsel--async-filter))
     ;; immediately update the display
@@ -329,9 +330,16 @@ caused by spawning too many subprocesses too quickly."
     (setq ivy--old-cands ivy--all-candidates)
     (ivy--exhibit)))
 
+(defun counsel--async-owner-p (process)
+  "Return non-nil if PROCESS belongs to the current Ivy session.
+A process can outlive its session (e.g. under a recursive minibuffer),
+and must not write its output into another session's candidates."
+  (eq (process-get process 'counsel--ivy-state) ivy-last))
+
 (defun counsel--async-sentinel (process _msg)
   "Sentinel function for an asynchronous counsel PROCESS."
-  (when (eq (process-status process) 'exit)
+  (when (and (eq (process-status process) 'exit)
+             (counsel--async-owner-p process))
     (counsel--sync-sentinel-on-exit process)))
 
 (defcustom counsel-async-filter-update-time 500000
@@ -351,8 +359,9 @@ Update the minibuffer with the amount of lines collected every
 `counsel-async-filter-update-time' microseconds since the last update."
   (with-current-buffer (process-buffer process)
     (insert str))
-  (when (time-less-p (counsel--async-filter-update-time)
-                     (time-since counsel--async-time))
+  (when (and (counsel--async-owner-p process)
+             (time-less-p (counsel--async-filter-update-time)
+                          (time-since counsel--async-time)))
     (let (numlines)
       (with-current-buffer (process-buffer process)
         (setq numlines (count-lines (point-min) (point-max)))
@@ -370,6 +379,10 @@ Update the minibuffer with the amount of lines collected every
 
 (defun counsel-delete-process (&optional name)
   "Delete current counsel process or that with NAME."
+  ;; A pending debounced spawn would otherwise start after the session
+  ;; has been unwound, leaking its output into the next session.
+  (when counsel--async-timer
+    (cancel-timer counsel--async-timer))
   (let ((process (get-process (or name " *counsel*"))))
     (when process
       (delete-process process))))
