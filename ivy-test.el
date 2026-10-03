@@ -1104,6 +1104,70 @@ AUTHOR")))
                      "k789"))
       (should (equal ivy-text "k7")))))
 
+(ert-deftest ivy-dynamic-resume-stale-result ()
+  "Resume a dynamic session with its last displayed query and results."
+  ;; (DELAY-MS INPUT EXPECTED-TEXT EXPECTED-CANDIDATES)
+  (dolist (case '(;; Quit before the debounced exhibit: last displayed query.
+                  (10000 "good" "" ("-match"))
+                  ;; Quit while the async search is in progress: keep the
+                  ;; previous results.
+                  (0 "goodx" "goodx" ("good-match"))))
+    (cl-destructuring-bind (delay input text cands) case
+      (with-temp-buffer
+        (let* ((ivy-last (copy-ivy-state ivy-last))
+               (ivy-text nil)
+               (ivy--all-candidates ())
+               (ivy--sessions ())
+               (ivy--exhibit-timer nil)
+               (ivy--queue-last-input nil)
+               (ivy-dynamic-exhibit-delay-ms delay)
+               (buf (current-buffer))
+               (queries ())
+               (coll (lambda (input)
+                       (push input queries)
+                       (if (member input '("" "good"))
+                           (list (concat input "-match"))
+                         ;; Simulate an async search still in progress.
+                         0))))
+          (unwind-protect
+              (progn
+                (ivy-test-with '(("C-g" abort-recursive-edit))
+                  ((condition-case nil
+                       (with-current-buffer buf
+                         (ivy-read "Dyn: " coll
+                                   :dynamic-collection t
+                                   :action #'ignore
+                                   :caller 'ivy-test-dyn))
+                     (quit nil)))
+                  (concat input " C-g"))
+                (should-not ivy--exhibit-timer)
+                (let ((data (plist-get (ivy-state-extra-props
+                                        (cdr (assq 'ivy-test-dyn ivy--sessions)))
+                                       :ivy-data)))
+                  (should (equal (plist-get data :text) text))
+                  (should (equal (plist-get data :all-candidates) cands)))
+                (setq ivy-dynamic-exhibit-delay-ms 0)
+                ;; Plain resume.
+                (setq queries nil)
+                (should (equal (ivy-test-with () ((ivy-resume)) "RET")
+                               (car cands)))
+                (should (equal ivy-text text))
+                (should-not queries)
+                ;; Another command clobbers the global state.
+                (ivy-test-with ()
+                  ((with-current-buffer buf
+                     (ivy-read "Other: " '("x" "y")
+                               :action #'ignore
+                               :caller 'ivy-test-other)))
+                  "RET")
+                (should (equal (ivy-test-with () ((ivy-resume 'ivy-test-dyn))
+                                 "RET")
+                               (car cands)))
+                (should (equal ivy-text text))
+                (should-not queries))
+            (when ivy--exhibit-timer
+              (cancel-timer ivy--exhibit-timer))))))))
+
 (ert-deftest ivy--break-lines ()
   "Test `ivy--break-lines' behavior."
   (dolist (width '(-1 0))

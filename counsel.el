@@ -362,17 +362,19 @@ Update the minibuffer with the amount of lines collected every
   (when (and (counsel--async-owner-p process)
              (time-less-p (counsel--async-filter-update-time)
                           (time-since counsel--async-time)))
-    (let (numlines)
+    (let (numlines lines)
       (with-current-buffer (process-buffer process)
         (setq numlines (count-lines (point-min) (point-max)))
-        (ivy--set-candidates
-         (let ((lines (counsel--split-string))
-               (ignore-re (ivy-alist-setting counsel-async-ignore-re-alist)))
-           (if (stringp ignore-re)
-               (cl-delete-if (lambda (line)
-                               (string-match-p ignore-re line))
-                             lines)
-             lines))))
+        (setq lines
+              (let ((lines (counsel--split-string))
+                    (ignore-re (ivy-alist-setting counsel-async-ignore-re-alist)))
+                (if (stringp ignore-re)
+                    (cl-delete-if (lambda (line)
+                                    (string-match-p ignore-re line))
+                                  lines)
+                  lines)))
+        ;; Keep the previous candidates until new output arrives.
+        (when lines (ivy--set-candidates lines)))
       (let ((ivy--prompt (format "%d++ %s" numlines (ivy-state-prompt ivy-last))))
         (ivy--insert-minibuffer (ivy--format ivy--all-candidates)))
       (setq counsel--async-time (current-time)))))
@@ -1607,11 +1609,12 @@ This function should set `ivy--old-re'."
   "Grep in the current Git repository for STRING."
   (or
    (ivy-more-chars)
-   (ignore
-    (counsel--async-command
-     (concat
-      (funcall counsel-git-grep-cmd-function string)
-      (and (ivy--case-fold-p string) " -i"))))))
+   (progn
+     (counsel--async-command
+      (concat
+       (funcall counsel-git-grep-cmd-function string)
+       (and (ivy--case-fold-p string) " -i")))
+     0)))
 
 (defun counsel-git-grep-action (x)
   "Go to occurrence X in current Git repository."
@@ -1804,7 +1807,7 @@ When CMD is non-nil, prompt for a specific \"git grep\" command."
       (concat
        (format counsel-git-grep-cmd regex)
        (if (ivy--case-fold-p str) " -i" "")))
-     nil)))
+     0)))
 
 (defun counsel-git-grep-switch-cmd ()
   "Set `counsel-git-grep-cmd' to a different value."
@@ -1916,7 +1919,7 @@ done") "\n" t)))
       ;; But it doesn't like the non-greedy ".*?".
       (format counsel-git-log-cmd
               (ivy--string-replace ".*?" ".*" (ivy-re-to-str ivy--old-re))))
-     nil)))
+     0)))
 
 (defun counsel-git-log-action (x)
   "Add candidate X to kill ring."
@@ -2993,7 +2996,7 @@ INITIAL-INPUT can be given as the initial minibuffer input."
     (setq ivy--old-re (ivy--regex-fuzzy str))
     (counsel--async-command
      (format counsel-fzf-cmd str)))
-  nil)
+  0)
 
 ;;;###autoload
 (defun counsel-fzf (&optional initial-input initial-directory fzf-prompt)
@@ -3277,7 +3280,7 @@ NEEDLE is the search string."
                                 (funcall (if (listp counsel-ag-command) #'identity
                                            #'shell-quote-argument)
                                          regex)))
-       nil))))
+       0))))
 
 ;;;###autoload
 (cl-defun counsel-ag (&optional initial-input initial-directory extra-ag-args ag-prompt
@@ -3559,7 +3562,7 @@ substituted by the search regexp and file, respectively.  Neither
             (string-match " " cmd)
             (replace-match " -i " nil nil cmd))
         cmd))
-     nil)))
+     0)))
 
 (defvar counsel--grep-last-pos nil
   "Store the last point and line that `counsel-grep-action' scrolled to.
@@ -3729,7 +3732,7 @@ large ones.  When non-nil, INITIAL-INPUT is the initial search pattern."
      (counsel--async-command
       (format "recoll -t -b %s"
               (shell-quote-argument str)))
-     nil)))
+     0)))
 
 ;; This command uses the recollq command line tool that comes together
 ;; with the recoll (the document indexing database) source:

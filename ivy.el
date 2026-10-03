@@ -1308,8 +1308,8 @@ With a prefix arg, try to restore a recorded completion session,
 if one exists."
   (interactive)
   (when (or current-prefix-arg session)
-    (ivy--restore-session session)
-    (setq this-command 'ivy-resume))
+    (ivy--restore-session session))
+  (setq this-command 'ivy-resume)
 
   (unless (ivy--current-session-resumable-p)
     (if current-prefix-arg
@@ -2268,6 +2268,8 @@ list of candidates, and returns the list of matching candidates.
 
 DYNAMIC-COLLECTION is a boolean specifying whether the list of
 candidates is updated after each input by calling COLLECTION.
+COLLECTION may return 0 to signal that an asynchronous search is in
+progress; the previous candidates are kept until it delivers new ones.
 
 EXTRA-PROPS is a plist that can be used to store
 collection-specific session-specific data.
@@ -2533,7 +2535,10 @@ This is useful for recursive `ivy-read'."
                                  (not (and (eq caller 'swiper-isearch)
                                            (buffer-modified-p))))
                             ivy--all-candidates
-                          (ivy--dynamic-collection-cands (or initial-input "")))))
+                          (ivy--dynamic-collection-cands (or initial-input ""))))
+             ;; 0 means an async search is in progress.
+             (when (eq coll 0)
+               (setq coll nil)))
             ((consp (car-safe collection))
              (when predicate
                (setq collection (cl-remove-if-not predicate collection)))
@@ -3277,8 +3282,15 @@ tries to ensure that it does not change depending on the number of candidates."
     (when (functionp hook)
       (funcall hook))))
 
+(defvar ivy--exhibit-timer nil
+  "Timer for debouncing calls to `ivy--exhibit'.")
+
 (defun ivy--minibuffer-exit ()
   "Clean up Ivy completion in `minibuffer-exit-hook'."
+  (when ivy--exhibit-timer
+    ;; Don't let a pending debounced exhibit run in another session.
+    (cancel-timer ivy--exhibit-timer)
+    (setq ivy--exhibit-timer nil))
   (remove-hook 'minibuffer-exit-hook #'ivy--minibuffer-exit t)
   (remove-hook 'post-command-hook #'ivy--queue-exhibit t)
   (remove-hook 'window-size-change-functions #'ivy--window-size-changed t))
@@ -3569,9 +3581,6 @@ Otherwise, ~/ will move home."
   "Delay in milliseconds before dynamic collections are refreshed."
   :type 'integer)
 
-(defvar ivy--exhibit-timer nil
-  "Timer for debouncing calls to `ivy--exhibit'.")
-
 (defvar ivy--queue-last-input nil
   "Value of `ivy--input' from last `post-command-hook'.")
 
@@ -3661,11 +3670,11 @@ Should be run in the minibuffer."
                                     ivy--trying-to-resume-dynamic-collection)
                                ivy--all-candidates
                              (ivy--dynamic-collection-cands ivy-text)))
-                (when (eq coll 0)
-                  (setq coll nil)
-                  (setq ivy--old-re nil)
-                  (setq in-progress t))
-                (setq ivy--all-candidates (ivy--sort-maybe coll))))
+                ;; 0 means an async search is in progress: keep the
+                ;; previous candidates until it delivers new ones.
+                (if (eq coll 0)
+                    (setq in-progress t)
+                  (setq ivy--all-candidates (ivy--sort-maybe coll)))))
             (when (eq ivy--all-candidates 0)
               (setq ivy--all-candidates nil)
               (setq ivy--old-re nil)
